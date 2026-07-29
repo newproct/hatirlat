@@ -2,6 +2,16 @@ import 'package:flutter/material.dart';
 
 void main() => runApp(const IlacHatirlaticiApp());
 
+// Uygulamanın ana renkleri ve gradyanı (caf caf kısmı burada :)
+const Color _renk1 = Color(0xFF6A11CB); // mor
+const Color _renk2 = Color(0xFF2575FC); // mavi
+
+const LinearGradient anaGradient = LinearGradient(
+  colors: [_renk1, _renk2],
+  begin: Alignment.topLeft,
+  end: Alignment.bottomRight,
+);
+
 class IlacHatirlaticiApp extends StatelessWidget {
   const IlacHatirlaticiApp({super.key});
 
@@ -11,7 +21,8 @@ class IlacHatirlaticiApp extends StatelessWidget {
       title: 'İlaç Hatırlatıcı',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF00897B)),
+        colorScheme: ColorScheme.fromSeed(seedColor: _renk1),
+        scaffoldBackgroundColor: const Color(0xFFF4F5FB),
         useMaterial3: true,
       ),
       home: const AnaSayfa(),
@@ -19,18 +30,15 @@ class IlacHatirlaticiApp extends StatelessWidget {
   }
 }
 
-// Bir ilacı temsil eden basit model: adı ve saati.
+// Bir ilacı temsil eden model: adı ve saati (artık değiştirilebilir).
 class Ilac {
-  final String ad;
-  final TimeOfDay saat;
+  String ad;
+  TimeOfDay saat;
   Ilac(this.ad, this.saat);
 }
 
-String saatMetni(TimeOfDay t) {
-  final s = t.hour.toString().padLeft(2, '0');
-  final d = t.minute.toString().padLeft(2, '0');
-  return '$s:$d';
-}
+String saatMetni(TimeOfDay t) =>
+    '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
 
 class AnaSayfa extends StatefulWidget {
   const AnaSayfa({super.key});
@@ -42,88 +50,258 @@ class AnaSayfa extends StatefulWidget {
 class _AnaSayfaState extends State<AnaSayfa> {
   final List<Ilac> _ilaclar = [];
 
-  Future<void> _ilacEkle() async {
-    final yeni = await Navigator.push<Ilac>(
+  // Hem ekleme hem düzenleme için aynı form. mevcut/index doluysa düzenleme olur.
+  Future<void> _formAc({Ilac? mevcut, int? index}) async {
+    final sonuc = await Navigator.push<Ilac>(
       context,
-      MaterialPageRoute(builder: (_) => const IlacEkleSayfasi()),
+      MaterialPageRoute(builder: (_) => IlacFormSayfasi(mevcut: mevcut)),
     );
-    if (yeni != null) {
-      setState(() => _ilaclar.add(yeni));
+    if (sonuc != null) {
+      setState(() {
+        if (index != null) {
+          _ilaclar[index] = sonuc;
+        } else {
+          _ilaclar.add(sonuc);
+        }
+      });
     }
   }
 
+  void _sil(int index) => setState(() => _ilaclar.removeAt(index));
+
   @override
   Widget build(BuildContext context) {
-    final renk = Theme.of(context).colorScheme;
     return Scaffold(
-      appBar: AppBar(
-        backgroundColor: renk.primary,
-        foregroundColor: renk.onPrimary,
-        title: const Text('İlaç Hatırlatıcı'),
-        centerTitle: true,
-      ),
-      body: _ilaclar.isEmpty
-          ? _bosDurum(renk)
-          : ListView.builder(
-              padding: const EdgeInsets.all(12),
-              itemCount: _ilaclar.length,
-              itemBuilder: (context, i) {
-                final ilac = _ilaclar[i];
-                return Card(
-                  child: ListTile(
-                    leading: Icon(Icons.medication, color: renk.primary),
-                    title: Text(ilac.ad),
-                    subtitle: Text('Saat: ${saatMetni(ilac.saat)}'),
-                    trailing: IconButton(
-                      icon: const Icon(Icons.delete_outline),
-                      onPressed: () => setState(() => _ilaclar.removeAt(i)),
-                    ),
+      body: Column(
+        children: [
+          _baslik(),
+          Expanded(
+            child: _ilaclar.isEmpty
+                ? _bosDurum()
+                : ListView.builder(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+                    itemCount: _ilaclar.length,
+                    itemBuilder: (context, i) => _ilacKarti(_ilaclar[i], i),
                   ),
-                );
-              },
-            ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _ilacEkle,
-        icon: const Icon(Icons.add),
-        label: const Text('İlaç Ekle'),
+          ),
+        ],
+      ),
+      floatingActionButton: _gradientFab(),
+    );
+  }
+
+  Widget _baslik() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(24, 60, 24, 28),
+      decoration: const BoxDecoration(
+        gradient: anaGradient,
+        borderRadius: BorderRadius.only(
+          bottomLeft: Radius.circular(32),
+          bottomRight: Radius.circular(32),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: const [
+              Icon(Icons.medication_rounded, color: Colors.white, size: 32),
+              SizedBox(width: 12),
+              Text(
+                'İlaç Hatırlatıcı',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            _ilaclar.isEmpty
+                ? 'Hadi ilk ilacını ekleyelim'
+                : '${_ilaclar.length} ilaç takip ediliyor',
+            style: const TextStyle(color: Colors.white70, fontSize: 15),
+          ),
+        ],
       ),
     );
   }
 
-  Widget _bosDurum(ColorScheme renk) {
-    return Center(
+  Widget _ilacKarti(Ilac ilac, int i) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: _renk1.withOpacity(0.12),
+            blurRadius: 16,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
       child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+        padding: const EdgeInsets.all(14),
+        child: Row(
           children: [
-            Icon(Icons.medication_outlined, size: 96, color: renk.primary),
-            const SizedBox(height: 24),
-            Text('Henüz ilaç yok',
-                style: Theme.of(context).textTheme.headlineSmall),
-            const SizedBox(height: 12),
-            const Text(
-              'Aşağıdaki "İlaç Ekle" butonuna basarak\n'
-              'ilk ilacını ekle.',
-              textAlign: TextAlign.center,
+            Container(
+              width: 52,
+              height: 52,
+              decoration: const BoxDecoration(
+                gradient: anaGradient,
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.medication_rounded, color: Colors.white),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    ilac.ad,
+                    style: const TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      const Icon(Icons.access_time_rounded,
+                          size: 16, color: Colors.grey),
+                      const SizedBox(width: 4),
+                      Text(
+                        saatMetni(ilac.saat),
+                        style: const TextStyle(color: Colors.grey, fontSize: 14),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            IconButton(
+              icon: Icon(Icons.edit_rounded, color: _renk2),
+              onPressed: () => _formAc(mevcut: ilac, index: i),
+            ),
+            IconButton(
+              icon: const Icon(Icons.delete_outline_rounded,
+                  color: Colors.redAccent),
+              onPressed: () => _sil(i),
             ),
           ],
         ),
       ),
     );
   }
+
+  Widget _bosDurum() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 120,
+              height: 120,
+              decoration: BoxDecoration(
+                gradient: anaGradient,
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: _renk1.withOpacity(0.35),
+                    blurRadius: 30,
+                    offset: const Offset(0, 12),
+                  ),
+                ],
+              ),
+              child: const Icon(Icons.medication_rounded,
+                  size: 60, color: Colors.white),
+            ),
+            const SizedBox(height: 28),
+            const Text(
+              'Henüz ilaç yok',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 10),
+            const Text(
+              'Alttaki butona basarak ilk ilacını\n'
+              'ekle, saatini seç, gerisini bize bırak.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.grey, height: 1.4),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _gradientFab() {
+    return Container(
+      decoration: BoxDecoration(
+        gradient: anaGradient,
+        borderRadius: BorderRadius.circular(30),
+        boxShadow: [
+          BoxShadow(
+            color: _renk1.withOpacity(0.4),
+            blurRadius: 16,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(30),
+          onTap: () => _formAc(),
+          child: const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.add, color: Colors.white),
+                SizedBox(width: 8),
+                Text(
+                  'İlaç Ekle',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
-class IlacEkleSayfasi extends StatefulWidget {
-  const IlacEkleSayfasi({super.key});
+class IlacFormSayfasi extends StatefulWidget {
+  final Ilac? mevcut;
+  const IlacFormSayfasi({super.key, this.mevcut});
 
   @override
-  State<IlacEkleSayfasi> createState() => _IlacEkleSayfasiState();
+  State<IlacFormSayfasi> createState() => _IlacFormSayfasiState();
 }
 
-class _IlacEkleSayfasiState extends State<IlacEkleSayfasi> {
-  final _adController = TextEditingController();
+class _IlacFormSayfasiState extends State<IlacFormSayfasi> {
+  late final TextEditingController _adController;
   TimeOfDay? _secilenSaat;
+
+  @override
+  void initState() {
+    super.initState();
+    // Düzenleme ise mevcut değerlerle başla.
+    _adController = TextEditingController(text: widget.mevcut?.ad ?? '');
+    _secilenSaat = widget.mevcut?.saat;
+  }
 
   @override
   void dispose() {
@@ -134,7 +312,7 @@ class _IlacEkleSayfasiState extends State<IlacEkleSayfasi> {
   Future<void> _saatSec() async {
     final secilen = await showTimePicker(
       context: context,
-      initialTime: TimeOfDay.now(),
+      initialTime: _secilenSaat ?? TimeOfDay.now(),
     );
     if (secilen != null) {
       setState(() => _secilenSaat = secilen);
@@ -144,59 +322,139 @@ class _IlacEkleSayfasiState extends State<IlacEkleSayfasi> {
   void _kaydet() {
     final ad = _adController.text.trim();
     if (ad.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Lütfen ilaç adını yaz.')),
-      );
+      _uyari('Lütfen ilaç adını yaz.');
       return;
     }
     if (_secilenSaat == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Lütfen bir saat seç.')),
-      );
+      _uyari('Lütfen bir saat seç.');
       return;
     }
     Navigator.pop(context, Ilac(ad, _secilenSaat!));
   }
 
+  void _uyari(String mesaj) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(mesaj)));
+  }
+
   @override
   Widget build(BuildContext context) {
-    final renk = Theme.of(context).colorScheme;
+    final duzenleme = widget.mevcut != null;
     return Scaffold(
-      appBar: AppBar(
-        backgroundColor: renk.primary,
-        foregroundColor: renk.onPrimary,
-        title: const Text('Yeni İlaç'),
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            TextField(
-              controller: _adController,
-              decoration: const InputDecoration(
-                labelText: 'İlaç adı',
-                hintText: 'Örn. Tansiyon hapı',
-                border: OutlineInputBorder(),
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(
+            padding: const EdgeInsets.fromLTRB(12, 56, 20, 24),
+            decoration: const BoxDecoration(
+              gradient: anaGradient,
+              borderRadius: BorderRadius.only(
+                bottomLeft: Radius.circular(28),
+                bottomRight: Radius.circular(28),
               ),
             ),
-            const SizedBox(height: 20),
-            OutlinedButton.icon(
-              onPressed: _saatSec,
-              icon: const Icon(Icons.access_time),
-              label: Text(
-                _secilenSaat == null
-                    ? 'Saat seç'
-                    : 'Saat: ${saatMetni(_secilenSaat!)}',
+            child: Row(
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.arrow_back, color: Colors.white),
+                  onPressed: () => Navigator.pop(context),
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  duzenleme ? 'İlacı Düzenle' : 'Yeni İlaç',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Text('İlaç adı',
+                      style: TextStyle(fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: _adController,
+                    decoration: InputDecoration(
+                      hintText: 'Örn. Tansiyon hapı',
+                      filled: true,
+                      fillColor: Colors.white,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide: BorderSide.none,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  const Text('Saat',
+                      style: TextStyle(fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 8),
+                  GestureDetector(
+                    onTap: _saatSec,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 18),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.access_time_rounded, color: _renk2),
+                          const SizedBox(width: 12),
+                          Text(
+                            _secilenSaat == null
+                                ? 'Saat seç'
+                                : saatMetni(_secilenSaat!),
+                            style: TextStyle(
+                              fontSize: 16,
+                              color: _secilenSaat == null
+                                  ? Colors.grey
+                                  : Colors.black87,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 40),
+                  GestureDetector(
+                    onTap: _kaydet,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 18),
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        gradient: anaGradient,
+                        borderRadius: BorderRadius.circular(16),
+                        boxShadow: [
+                          BoxShadow(
+                            color: _renk1.withOpacity(0.35),
+                            blurRadius: 16,
+                            offset: const Offset(0, 8),
+                          ),
+                        ],
+                      ),
+                      child: const Text(
+                        'Kaydet',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 17,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
-            const SizedBox(height: 32),
-            FilledButton(
-              onPressed: _kaydet,
-              child: const Text('Kaydet'),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
