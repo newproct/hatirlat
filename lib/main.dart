@@ -1,4 +1,6 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() => runApp(const IlacHatirlaticiApp());
 
@@ -11,6 +13,8 @@ const LinearGradient anaGradient = LinearGradient(
   begin: Alignment.topLeft,
   end: Alignment.bottomRight,
 );
+
+const String _kayitAnahtari = 'ilaclar_listesi';
 
 class IlacHatirlaticiApp extends StatelessWidget {
   const IlacHatirlaticiApp({super.key});
@@ -31,10 +35,24 @@ class IlacHatirlaticiApp extends StatelessWidget {
 }
 
 // Bir ilacı temsil eden model: adı ve saati (artık değiştirilebilir).
+// Kalıcı kayıt için JSON'a çevrilip geri okunabiliyor.
 class Ilac {
   String ad;
   TimeOfDay saat;
   Ilac(this.ad, this.saat);
+
+  Map<String, dynamic> toJson() => {
+        'ad': ad,
+        'saat': saat.hour * 60 + saat.minute,
+      };
+
+  factory Ilac.fromJson(Map<String, dynamic> json) {
+    final dakika = json['saat'] as int;
+    return Ilac(
+      json['ad'] as String,
+      TimeOfDay(hour: dakika ~/ 60, minute: dakika % 60),
+    );
+  }
 }
 
 String saatMetni(TimeOfDay t) =>
@@ -49,6 +67,34 @@ class AnaSayfa extends StatefulWidget {
 
 class _AnaSayfaState extends State<AnaSayfa> {
   final List<Ilac> _ilaclar = [];
+  bool _yukleniyor = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _kayitliListeyiYukle();
+  }
+
+  Future<void> _kayitliListeyiYukle() async {
+    final prefs = await SharedPreferences.getInstance();
+    final kayitliMetin = prefs.getString(_kayitAnahtari);
+    if (kayitliMetin != null) {
+      final List<dynamic> liste = jsonDecode(kayitliMetin);
+      setState(() {
+        _ilaclar.clear();
+        _ilaclar.addAll(liste.map((e) => Ilac.fromJson(e)));
+        _yukleniyor = false;
+      });
+    } else {
+      setState(() => _yukleniyor = false);
+    }
+  }
+
+  Future<void> _listeyiKaydet() async {
+    final prefs = await SharedPreferences.getInstance();
+    final metin = jsonEncode(_ilaclar.map((e) => e.toJson()).toList());
+    await prefs.setString(_kayitAnahtari, metin);
+  }
 
   // Hem ekleme hem düzenleme için aynı form. mevcut/index doluysa düzenleme olur.
   Future<void> _formAc({Ilac? mevcut, int? index}) async {
@@ -64,13 +110,22 @@ class _AnaSayfaState extends State<AnaSayfa> {
           _ilaclar.add(sonuc);
         }
       });
+      _listeyiKaydet();
     }
   }
 
-  void _sil(int index) => setState(() => _ilaclar.removeAt(index));
+  void _sil(int index) {
+    setState(() => _ilaclar.removeAt(index));
+    _listeyiKaydet();
+  }
 
   @override
   Widget build(BuildContext context) {
+    if (_yukleniyor) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
     return Scaffold(
       body: Column(
         children: [
