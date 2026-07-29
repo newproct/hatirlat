@@ -25,6 +25,13 @@ Future<void> _bildirimSistemBaslat() async {
 String _tarihMetni(DateTime d) =>
     '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 
+const List<String> _ayAdlari = [
+  '', 'Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran',
+  'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık',
+];
+
+String _gununMetni(DateTime d) => 'Bugün, ${d.day} ${_ayAdlari[d.month]}';
+
 // Bir ilaç için bir sonraki hatırlatmayı planlar.
 // Bugün zaten "içtim" işaretlenmişse veya saat geçmişse, yarına planlar.
 Future<void> _bildirimAyarla(Ilac ilac) async {
@@ -64,15 +71,11 @@ void main() async {
   runApp(const IlacHatirlaticiApp());
 }
 
-// Uygulamanın ana renkleri ve gradyanı (caf caf kısmı burada :)
-const Color _renk1 = Color(0xFF6A11CB); // mor
-const Color _renk2 = Color(0xFF2575FC); // mavi
-
-const LinearGradient anaGradient = LinearGradient(
-  colors: [_renk1, _renk2],
-  begin: Alignment.topLeft,
-  end: Alignment.bottomRight,
-);
+// Durum renkleri: alındı = yeşil, bekliyor = mavi, yaklaşıyor = turuncu
+const Color _renkAlindi = Color(0xFF2E9F5B);
+const Color _renkBekliyor = Color(0xFF3B82F6);
+const Color _renkYaklasiyor = Color(0xFFF0A020);
+const Color _sayfaArkaPlan = Color(0xFFF7F7F5);
 
 const String _kayitAnahtari = 'ilaclar_listesi';
 
@@ -85,8 +88,8 @@ class IlacHatirlaticiApp extends StatelessWidget {
       title: 'İlaç Hatırlatıcı',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: _renk1),
-        scaffoldBackgroundColor: const Color(0xFFF4F5FB),
+        colorScheme: ColorScheme.fromSeed(seedColor: _renkBekliyor),
+        scaffoldBackgroundColor: _sayfaArkaPlan,
         useMaterial3: true,
       ),
       home: const AnaSayfa(),
@@ -161,7 +164,6 @@ class _AnaSayfaState extends State<AnaSayfa> {
     } else {
       setState(() => _yukleniyor = false);
     }
-    // Uygulama her açıldığında bildirimleri güncel duruma göre yeniden planla.
     for (final ilac in _ilaclar) {
       await _bildirimAyarla(ilac);
     }
@@ -173,7 +175,6 @@ class _AnaSayfaState extends State<AnaSayfa> {
     await prefs.setString(_kayitAnahtari, metin);
   }
 
-  // Hem ekleme hem düzenleme için aynı form. mevcut/index doluysa düzenleme olur.
   Future<void> _formAc({Ilac? mevcut, int? index}) async {
     final sonuc = await Navigator.push<Ilac>(
       context,
@@ -206,6 +207,14 @@ class _AnaSayfaState extends State<AnaSayfa> {
     _bildirimAyarla(_ilaclar[index]);
   }
 
+  bool _yaklasiyorMu(Ilac ilac) {
+    final simdi = DateTime.now();
+    final hedef = DateTime(
+        simdi.year, simdi.month, simdi.day, ilac.saat.hour, ilac.saat.minute);
+    final farkDakika = hedef.difference(simdi).inMinutes;
+    return farkDakika >= 0 && farkDakika <= 60;
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_yukleniyor) {
@@ -214,60 +223,43 @@ class _AnaSayfaState extends State<AnaSayfa> {
       );
     }
     return Scaffold(
-      body: Column(
-        children: [
-          _baslik(),
-          Expanded(
-            child: _ilaclar.isEmpty
-                ? _bosDurum()
-                : ListView.builder(
-                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
-                    itemCount: _ilaclar.length,
-                    itemBuilder: (context, i) => _ilacKarti(_ilaclar[i], i),
+      backgroundColor: _sayfaArkaPlan,
+      body: SafeArea(
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    _gununMetni(DateTime.now()),
+                    style: const TextStyle(color: Colors.grey, fontSize: 14),
                   ),
-          ),
-        ],
-      ),
-      floatingActionButton: _gradientFab(),
-    );
-  }
-
-  Widget _baslik() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(24, 60, 24, 28),
-      decoration: const BoxDecoration(
-        gradient: anaGradient,
-        borderRadius: BorderRadius.only(
-          bottomLeft: Radius.circular(32),
-          bottomRight: Radius.circular(32),
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: const [
-              Icon(Icons.medication_rounded, color: Colors.white, size: 32),
-              SizedBox(width: 12),
-              Text(
-                'İlaç Hatırlatıcı',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                ),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'İlaçlarım',
+                    style: TextStyle(
+                      fontSize: 26,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black87,
+                    ),
+                  ),
+                ],
               ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Text(
-            _ilaclar.isEmpty
-                ? 'Hadi ilk ilacını ekleyelim'
-                : '${_ilaclar.length} ilaç takip ediliyor',
-            style: const TextStyle(color: Colors.white70, fontSize: 15),
-          ),
-        ],
+            ),
+            Expanded(
+              child: _ilaclar.isEmpty
+                  ? _bosDurum()
+                  : ListView.builder(
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                      itemCount: _ilaclar.length,
+                      itemBuilder: (context, i) => _ilacKarti(_ilaclar[i], i),
+                    ),
+            ),
+            _altEkleButonu(),
+          ],
+        ),
       ),
     );
   }
@@ -275,111 +267,128 @@ class _AnaSayfaState extends State<AnaSayfa> {
   Widget _ilacKarti(Ilac ilac, int i) {
     final bugun = _tarihMetni(DateTime.now());
     final alindiMi = ilac.sonIcildiTarih == bugun;
+    final yaklasiyor = !alindiMi && _yaklasiyorMu(ilac);
+
+    final Color durumRengi =
+        alindiMi ? _renkAlindi : (yaklasiyor ? _renkYaklasiyor : _renkBekliyor);
+    final IconData durumIkon = alindiMi
+        ? Icons.medication_rounded
+        : (yaklasiyor ? Icons.notifications_rounded : Icons.medication_rounded);
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 14),
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: _renk1.withOpacity(0.12),
-            blurRadius: 16,
-            offset: const Offset(0, 6),
-          ),
-        ],
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: yaklasiyor ? _renkYaklasiyor : const Color(0xFFECECEA),
+          width: yaklasiyor ? 1.4 : 1,
+        ),
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          children: [
-            Row(
-              children: [
-                Container(
-                  width: 52,
-                  height: 52,
-                  decoration: const BoxDecoration(
-                    gradient: anaGradient,
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(Icons.medication_rounded,
-                      color: Colors.white),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        ilac.ad,
-                        style: const TextStyle(
-                          fontSize: 17,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Row(
-                        children: [
-                          const Icon(Icons.access_time_rounded,
-                              size: 16, color: Colors.grey),
-                          const SizedBox(width: 4),
-                          Text(
-                            saatMetni(ilac.saat),
-                            style: const TextStyle(
-                                color: Colors.grey, fontSize: 14),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                IconButton(
-                  icon: Icon(Icons.edit_rounded, color: _renk2),
-                  onPressed: () => _formAc(mevcut: ilac, index: i),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.delete_outline_rounded,
-                      color: Colors.redAccent),
-                  onPressed: () => _sil(i),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            GestureDetector(
-              onTap: alindiMi ? null : () => _icildiIsaretle(i),
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          Row(
+            children: [
+              IconButton(
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+                iconSize: 18,
+                icon: const Icon(Icons.edit_outlined, color: Colors.grey),
+                onPressed: () => _formAc(mevcut: ilac, index: i),
+              ),
+              const SizedBox(width: 12),
+              IconButton(
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+                iconSize: 18,
+                icon: const Icon(Icons.delete_outline_rounded, color: Colors.grey),
+                onPressed: () => _sil(i),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
                 decoration: BoxDecoration(
-                  color: alindiMi
-                      ? Colors.green.withOpacity(0.12)
-                      : _renk2.withOpacity(0.10),
-                  borderRadius: BorderRadius.circular(12),
+                  color: durumRengi.withOpacity(0.14),
+                  shape: BoxShape.circle,
                 ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
+                child: Icon(durumIkon, color: durumRengi, size: 20),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(
-                      alindiMi
-                          ? Icons.check_circle_rounded
-                          : Icons.radio_button_unchecked_rounded,
-                      size: 18,
-                      color: alindiMi ? Colors.green : _renk2,
-                    ),
-                    const SizedBox(width: 8),
                     Text(
-                      alindiMi ? 'Bugün alındı' : 'İçtim',
-                      style: TextStyle(
+                      ilac.ad,
+                      style: const TextStyle(
+                        fontSize: 16,
                         fontWeight: FontWeight.w600,
-                        color: alindiMi ? Colors.green : _renk2,
+                        color: Colors.black87,
                       ),
+                    ),
+                    const SizedBox(height: 3),
+                    Row(
+                      children: [
+                        const Icon(Icons.access_time_rounded,
+                            size: 14, color: Colors.grey),
+                        const SizedBox(width: 4),
+                        Text(
+                          yaklasiyor
+                              ? '${saatMetni(ilac.saat)} · yaklaşıyor'
+                              : saatMetni(ilac.saat),
+                          style: TextStyle(
+                            color: yaklasiyor ? _renkYaklasiyor : Colors.grey,
+                            fontSize: 13,
+                            fontWeight:
+                                yaklasiyor ? FontWeight.w600 : FontWeight.normal,
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
               ),
-            ),
-          ],
-        ),
+              const SizedBox(width: 8),
+              GestureDetector(
+                onTap: alindiMi ? null : () => _icildiIsaretle(i),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+                  decoration: BoxDecoration(
+                    color: alindiMi ? _renkAlindi.withOpacity(0.12) : Colors.white,
+                    borderRadius: BorderRadius.circular(30),
+                    border: Border.all(
+                      color: alindiMi ? Colors.transparent : durumRengi,
+                      width: 1.2,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (alindiMi)
+                        Icon(Icons.check_rounded, size: 15, color: _renkAlindi),
+                      if (alindiMi) const SizedBox(width: 4),
+                      Text(
+                        alindiMi ? 'İçtim' : 'İçtim mi?',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: alindiMi ? _renkAlindi : durumRengi,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -392,28 +401,21 @@ class _AnaSayfaState extends State<AnaSayfa> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Container(
-              width: 120,
-              height: 120,
+              width: 100,
+              height: 100,
               decoration: BoxDecoration(
-                gradient: anaGradient,
+                color: _renkBekliyor.withOpacity(0.12),
                 shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(
-                    color: _renk1.withOpacity(0.35),
-                    blurRadius: 30,
-                    offset: const Offset(0, 12),
-                  ),
-                ],
               ),
-              child: const Icon(Icons.medication_rounded,
-                  size: 60, color: Colors.white),
+              child: Icon(Icons.medication_rounded,
+                  size: 48, color: _renkBekliyor),
             ),
-            const SizedBox(height: 28),
+            const SizedBox(height: 24),
             const Text(
               'Henüz ilaç yok',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              style: TextStyle(fontSize: 19, fontWeight: FontWeight.bold),
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 8),
             const Text(
               'Alttaki butona basarak ilk ilacını\n'
               'ekle, saatini seç, gerisini bize bırak.',
@@ -426,41 +428,33 @@ class _AnaSayfaState extends State<AnaSayfa> {
     );
   }
 
-  Widget _gradientFab() {
-    return Container(
-      decoration: BoxDecoration(
-        gradient: anaGradient,
-        borderRadius: BorderRadius.circular(30),
-        boxShadow: [
-          BoxShadow(
-            color: _renk1.withOpacity(0.4),
-            blurRadius: 16,
-            offset: const Offset(0, 8),
+  Widget _altEkleButonu() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+      child: GestureDetector(
+        onTap: () => _formAc(),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: Colors.black,
+            borderRadius: BorderRadius.circular(30),
           ),
-        ],
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(30),
-          onTap: () => _formAc(),
-          child: const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.add, color: Colors.white),
-                SizedBox(width: 8),
-                Text(
-                  'İlaç Ekle',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
-                  ),
+          child: const Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.add, color: Colors.white, size: 20),
+              SizedBox(width: 8),
+              Text(
+                'İlaç ekle',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 15,
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
@@ -483,7 +477,6 @@ class _IlacFormSayfasiState extends State<IlacFormSayfasi> {
   @override
   void initState() {
     super.initState();
-    // Düzenleme ise mevcut değerlerle başla.
     _adController = TextEditingController(text: widget.mevcut?.ad ?? '');
     _secilenSaat = widget.mevcut?.saat;
   }
@@ -535,121 +528,112 @@ class _IlacFormSayfasiState extends State<IlacFormSayfasi> {
   Widget build(BuildContext context) {
     final duzenleme = widget.mevcut != null;
     return Scaffold(
-      body: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Container(
-            padding: const EdgeInsets.fromLTRB(12, 56, 20, 24),
-            decoration: const BoxDecoration(
-              gradient: anaGradient,
-              borderRadius: BorderRadius.only(
-                bottomLeft: Radius.circular(28),
-                bottomRight: Radius.circular(28),
-              ),
-            ),
-            child: Row(
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.arrow_back, color: Colors.white),
-                  onPressed: () => Navigator.pop(context),
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  duzenleme ? 'İlacı Düzenle' : 'Yeni İlaç',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Expanded(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
+      backgroundColor: _sayfaArkaPlan,
+      body: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 12, 20, 12),
+              child: Row(
                 children: [
-                  const Text('İlaç adı',
-                      style: TextStyle(fontWeight: FontWeight.w600)),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: _adController,
-                    decoration: InputDecoration(
-                      hintText: 'Örn. Tansiyon hapı',
-                      filled: true,
-                      fillColor: Colors.white,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(14),
-                        borderSide: BorderSide.none,
-                      ),
-                    ),
+                  IconButton(
+                    icon: const Icon(Icons.arrow_back, color: Colors.black87),
+                    onPressed: () => Navigator.pop(context),
                   ),
-                  const SizedBox(height: 24),
-                  const Text('Saat',
-                      style: TextStyle(fontWeight: FontWeight.w600)),
-                  const SizedBox(height: 8),
-                  GestureDetector(
-                    onTap: _saatSec,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 18),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(Icons.access_time_rounded, color: _renk2),
-                          const SizedBox(width: 12),
-                          Text(
-                            _secilenSaat == null
-                                ? 'Saat seç'
-                                : saatMetni(_secilenSaat!),
-                            style: TextStyle(
-                              fontSize: 16,
-                              color: _secilenSaat == null
-                                  ? Colors.grey
-                                  : Colors.black87,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 40),
-                  GestureDetector(
-                    onTap: _kaydet,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 18),
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        gradient: anaGradient,
-                        borderRadius: BorderRadius.circular(16),
-                        boxShadow: [
-                          BoxShadow(
-                            color: _renk1.withOpacity(0.35),
-                            blurRadius: 16,
-                            offset: const Offset(0, 8),
-                          ),
-                        ],
-                      ),
-                      child: const Text(
-                        'Kaydet',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 17,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
+                  const SizedBox(width: 4),
+                  Text(
+                    duzenleme ? 'İlacı düzenle' : 'Yeni ilaç',
+                    style: const TextStyle(
+                      color: Colors.black87,
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
                     ),
                   ),
                 ],
               ),
             ),
-          ),
-        ],
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const Text('İlaç adı',
+                        style: TextStyle(fontWeight: FontWeight.w600)),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: _adController,
+                      decoration: InputDecoration(
+                        hintText: 'Örn. Tansiyon hapı',
+                        filled: true,
+                        fillColor: Colors.white,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: BorderSide(color: Colors.grey.shade200),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    const Text('Saat',
+                        style: TextStyle(fontWeight: FontWeight.w600)),
+                    const SizedBox(height: 8),
+                    GestureDetector(
+                      onTap: _saatSec,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 18),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: Colors.grey.shade200),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.access_time_rounded,
+                                color: _renkBekliyor),
+                            const SizedBox(width: 12),
+                            Text(
+                              _secilenSaat == null
+                                  ? 'Saat seç'
+                                  : saatMetni(_secilenSaat!),
+                              style: TextStyle(
+                                fontSize: 16,
+                                color: _secilenSaat == null
+                                    ? Colors.grey
+                                    : Colors.black87,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 40),
+                    GestureDetector(
+                      onTap: _kaydet,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 18),
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: Colors.black,
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: const Text(
+                          'Kaydet',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 17,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
