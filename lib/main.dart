@@ -1,8 +1,68 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:timezone/data/latest.dart' as tzdata;
+import 'package:timezone/timezone.dart' as tz;
 
-void main() => runApp(const IlacHatirlaticiApp());
+final FlutterLocalNotificationsPlugin _bildirimPlugin =
+    FlutterLocalNotificationsPlugin();
+
+Future<void> _bildirimSistemBaslat() async {
+  tzdata.initializeTimeZones();
+
+  const androidAyarlari = AndroidInitializationSettings('@mipmap/ic_launcher');
+  const ayarlar = InitializationSettings(android: androidAyarlari);
+  await _bildirimPlugin.initialize(ayarlar);
+
+  final androidUygulama = _bildirimPlugin
+      .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin>();
+  await androidUygulama?.requestNotificationsPermission();
+  await androidUygulama?.requestExactAlarmsPermission();
+}
+
+String _tarihMetni(DateTime d) =>
+    '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+// Bir ilaç için bir sonraki hatırlatmayı planlar.
+// Bugün zaten "içtim" işaretlenmişse veya saat geçmişse, yarına planlar.
+Future<void> _bildirimAyarla(Ilac ilac) async {
+  await _bildirimPlugin.cancel(ilac.id);
+
+  final simdi = tz.TZDateTime.now(tz.local);
+  final bugun = _tarihMetni(DateTime.now());
+  var hedef = tz.TZDateTime(
+      tz.local, simdi.year, simdi.month, simdi.day, ilac.saat.hour, ilac.saat.minute);
+
+  final bugunAlindiMi = ilac.sonIcildiTarih == bugun;
+  if (hedef.isBefore(simdi) || bugunAlindiMi) {
+    hedef = hedef.add(const Duration(days: 1));
+  }
+
+  await _bildirimPlugin.zonedSchedule(
+    ilac.id,
+    'İlaç zamanı!',
+    '${ilac.ad} ilacını içmeyi unutma.',
+    hedef,
+    const NotificationDetails(
+      android: AndroidNotificationDetails(
+        'ilac_hatirlatici_kanal',
+        'İlaç Hatırlatmaları',
+        channelDescription: 'İlaç saatini hatırlatan bildirimler',
+        importance: Importance.high,
+        priority: Priority.high,
+      ),
+    ),
+    androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+  );
+}
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await _bildirimSistemBaslat();
+  runApp(const IlacHatirlaticiApp());
+}
 
 // Uygulamanın ana renkleri ve gradyanı (caf caf kısmı burada :)
 const Color _renk1 = Color(0xFF6A11CB); // mor
@@ -34,23 +94,36 @@ class IlacHatirlaticiApp extends StatelessWidget {
   }
 }
 
-// Bir ilacı temsil eden model: adı ve saati (artık değiştirilebilir).
+// Bir ilacı temsil eden model: adı, saati ve son içildiği tarih.
 // Kalıcı kayıt için JSON'a çevrilip geri okunabiliyor.
+// id: bildirim planlamak için sabit ve benzersiz bir numara.
 class Ilac {
+  int id;
   String ad;
   TimeOfDay saat;
-  Ilac(this.ad, this.saat);
+  String? sonIcildiTarih; // "yyyy-M-d" formatında, o gün içildiyse dolu olur
+
+  Ilac({
+    required this.id,
+    required this.ad,
+    required this.saat,
+    this.sonIcildiTarih,
+  });
 
   Map<String, dynamic> toJson() => {
+        'id': id,
         'ad': ad,
         'saat': saat.hour * 60 + saat.minute,
+        'sonIcildiTarih': sonIcildiTarih,
       };
 
   factory Ilac.fromJson(Map<String, dynamic> json) {
     final dakika = json['saat'] as int;
     return Ilac(
-      json['ad'] as String,
-      TimeOfDay(hour: dakika ~/ 60, minute: dakika % 60),
+      id: json['id'] as int,
+      ad: json['ad'] as String,
+      saat: TimeOfDay(hour: dakika ~/ 60, minute: dakika % 60),
+      sonIcildiTarih: json['sonIcildiTarih'] as String?,
     );
   }
 }
@@ -88,6 +161,10 @@ class _AnaSayfaState extends State<AnaSayfa> {
     } else {
       setState(() => _yukleniyor = false);
     }
+    // Uygulama her açıldığında bildirimleri güncel duruma göre yeniden planla.
+    for (final ilac in _ilaclar) {
+      await _bildirimAyarla(ilac);
+    }
   }
 
   Future<void> _listeyiKaydet() async {
@@ -111,12 +188,22 @@ class _AnaSayfaState extends State<AnaSayfa> {
         }
       });
       _listeyiKaydet();
+      _bildirimAyarla(sonuc);
     }
   }
 
   void _sil(int index) {
+    _bildirimPlugin.cancel(_ilaclar[index].id);
     setState(() => _ilaclar.removeAt(index));
     _listeyiKaydet();
+  }
+
+  void _icildiIsaretle(int index) {
+    setState(() {
+      _ilaclar[index].sonIcildiTarih = _tarihMetni(DateTime.now());
+    });
+    _listeyiKaydet();
+    _bildirimAyarla(_ilaclar[index]);
   }
 
   @override
@@ -186,6 +273,9 @@ class _AnaSayfaState extends State<AnaSayfa> {
   }
 
   Widget _ilacKarti(Ilac ilac, int i) {
+    final bugun = _tarihMetni(DateTime.now());
+    final alindiMi = ilac.sonIcildiTarih == bugun;
+
     return Container(
       margin: const EdgeInsets.only(bottom: 14),
       decoration: BoxDecoration(
@@ -201,52 +291,92 @@ class _AnaSayfaState extends State<AnaSayfa> {
       ),
       child: Padding(
         padding: const EdgeInsets.all(14),
-        child: Row(
+        child: Column(
           children: [
-            Container(
-              width: 52,
-              height: 52,
-              decoration: const BoxDecoration(
-                gradient: anaGradient,
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(Icons.medication_rounded, color: Colors.white),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    ilac.ad,
-                    style: const TextStyle(
-                      fontSize: 17,
-                      fontWeight: FontWeight.w600,
-                    ),
+            Row(
+              children: [
+                Container(
+                  width: 52,
+                  height: 52,
+                  decoration: const BoxDecoration(
+                    gradient: anaGradient,
+                    shape: BoxShape.circle,
                   ),
-                  const SizedBox(height: 4),
-                  Row(
+                  child: const Icon(Icons.medication_rounded,
+                      color: Colors.white),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Icon(Icons.access_time_rounded,
-                          size: 16, color: Colors.grey),
-                      const SizedBox(width: 4),
                       Text(
-                        saatMetni(ilac.saat),
-                        style: const TextStyle(color: Colors.grey, fontSize: 14),
+                        ilac.ad,
+                        style: const TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          const Icon(Icons.access_time_rounded,
+                              size: 16, color: Colors.grey),
+                          const SizedBox(width: 4),
+                          Text(
+                            saatMetni(ilac.saat),
+                            style: const TextStyle(
+                                color: Colors.grey, fontSize: 14),
+                          ),
+                        ],
                       ),
                     ],
                   ),
-                ],
+                ),
+                IconButton(
+                  icon: Icon(Icons.edit_rounded, color: _renk2),
+                  onPressed: () => _formAc(mevcut: ilac, index: i),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.delete_outline_rounded,
+                      color: Colors.redAccent),
+                  onPressed: () => _sil(i),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            GestureDetector(
+              onTap: alindiMi ? null : () => _icildiIsaretle(i),
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                decoration: BoxDecoration(
+                  color: alindiMi
+                      ? Colors.green.withOpacity(0.12)
+                      : _renk2.withOpacity(0.10),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      alindiMi
+                          ? Icons.check_circle_rounded
+                          : Icons.radio_button_unchecked_rounded,
+                      size: 18,
+                      color: alindiMi ? Colors.green : _renk2,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      alindiMi ? 'Bugün alındı' : 'İçtim',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        color: alindiMi ? Colors.green : _renk2,
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
-            IconButton(
-              icon: Icon(Icons.edit_rounded, color: _renk2),
-              onPressed: () => _formAc(mevcut: ilac, index: i),
-            ),
-            IconButton(
-              icon: const Icon(Icons.delete_outline_rounded,
-                  color: Colors.redAccent),
-              onPressed: () => _sil(i),
             ),
           ],
         ),
@@ -384,7 +514,17 @@ class _IlacFormSayfasiState extends State<IlacFormSayfasi> {
       _uyari('Lütfen bir saat seç.');
       return;
     }
-    Navigator.pop(context, Ilac(ad, _secilenSaat!));
+    final id = widget.mevcut?.id ??
+        DateTime.now().millisecondsSinceEpoch.remainder(1000000000);
+    Navigator.pop(
+      context,
+      Ilac(
+        id: id,
+        ad: ad,
+        saat: _secilenSaat!,
+        sonIcildiTarih: widget.mevcut?.sonIcildiTarih,
+      ),
+    );
   }
 
   void _uyari(String mesaj) {
