@@ -38,6 +38,13 @@ jobs:
       - name: Bildirim izinlerini ekle
         run: python3 patch_manifest.py
 
+      - name: Bildirim icin gradle ayarlarini ekle
+        run: python3 patch_gradle.py
+
+      - name: Sabit imzayi yerlestir
+        run: |
+          ...
+
       - name: Sabit imzayi yerlestir
         run: |
           mkdir -p ~/.android
