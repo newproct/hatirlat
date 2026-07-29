@@ -35,6 +35,9 @@ jobs:
           cp /tmp/pubspec.yaml pubspec.yaml
           rm -rf lib && mkdir lib && cp -r /tmp/lib/. lib/
 
+      - name: Bildirim izinlerini ekle
+        run: python3 patch_manifest.py
+
       - name: Sabit imzayi yerlestir
         run: |
           mkdir -p ~/.android
