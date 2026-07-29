@@ -1,0 +1,45 @@
+name: APK Derle
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Kodu cek
+        uses: actions/checkout@v4
+
+      - name: Java kur
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Flutter kur
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Android dosyalarini olustur
+        run: |
+          cp pubspec.yaml /tmp/pubspec.yaml
+          mkdir -p /tmp/lib && cp -r lib/. /tmp/lib/
+          flutter create --org com.corlu --project-name ilac_hatirlatici --platforms=android .
+          cp /tmp/pubspec.yaml pubspec.yaml
+          rm -rf lib && mkdir lib && cp -r /tmp/lib/. lib/
+
+      - name: Paketleri indir
+        run: flutter pub get
+
+      - name: APK derle
+        run: flutter build apk --debug
+
+      - name: APK yukle
+        uses: actions/upload-artifact@v4
+        with:
+          name: ilac-hatirlatici-apk
+          path: build/app/outputs/flutter-apk/app-debug.apk
