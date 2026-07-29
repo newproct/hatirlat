@@ -62,6 +62,8 @@ Future<void> _bildirimAyarla(Ilac ilac) async {
       ),
     ),
     androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+    uiLocalNotificationDateInterpretation:
+        UILocalNotificationDateInterpretation.absoluteTime,
   );
 }
 
